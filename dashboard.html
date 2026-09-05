@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mini Banco — Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f7f6f3; --card: #ffffff; --border: #e3e1d8;
+      --text: #1a1917; --muted: #6b6a66; --accent: #1d9e75;
+      --red: #e24b4a; --yellow: #ba7517; --font: system-ui, sans-serif;
+      --radius: 10px;
+    }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); padding: 1.5rem; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;
+    }
+    h1 { font-size: 1.2rem; font-weight: 600; }
+    h1 span { font-size: 0.8rem; font-weight: 400; color: var(--muted); display: block; margin-top: 2px; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 18px; font-size: 13px; cursor: pointer;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-family: inherit;
+      transition: background .15s;
+    }
+    .btn:hover { background: var(--bg); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .storage-row {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 16px;
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; margin-bottom: 1.5rem;
+    }
+    .storage-row i { font-size: 18px; color: var(--muted); }
+    .storage-row .val { margin-left: auto; font-weight: 600; }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.1rem 1.2rem;
+      border-top: 3px solid var(--border);
+    }
+    .card.online  { border-top-color: var(--accent); }
+    .card.offline { border-top-color: var(--red); }
+
+    .card-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+    .card-head .info h2 { font-size: 15px; font-weight: 600; }
+    .card-head .info p  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .badge { font-size: 11px; padding: 3px 9px; border-radius: 99px; font-weight: 500; }
+    .badge.online  { background: #eaf3de; color: #3b6d11; }
+    .badge.offline { background: #fcebeb; color: #a32d2d; }
+    .badge.unknown { background: #f1efe8; color: #5f5e5a; }
+
+    .metrics { display: flex; flex-direction: column; gap: 0; }
+    .m-row {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--border);
+    }
+    .m-row:last-child { border-bottom: none; }
+    .m-label { color: var(--muted); display: flex; align-items: center; gap: 5px; }
+    .m-val { font-weight: 500; }
+
+    .bar-wrap { margin-top: 4px; }
+    .bar-label { font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .bar-bg { background: var(--bg); border-radius: 99px; height: 5px; overflow: hidden; }
+    .bar-fill { height: 5px; border-radius: 99px; transition: width .4s ease; background: var(--accent); }
+    .bar-fill.warn { background: var(--yellow); }
+    .bar-fill.danger { background: var(--red); }
+
+    .err { font-size: 12px; color: var(--muted); font-style: italic; margin-top: 10px; }
+    footer { font-size: 12px; color: var(--muted); text-align: right; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Mini Banco — Dashboard <span>Sistemas Distribuidos · ESCOM IPN</span></h1>
+  <button class="btn" id="btn" onclick="fetchAll()">
+    <i class="ti ti-refresh"></i> Refrescar
+  </button>
+</header>
+
+<div class="storage-row">
+  <i class="ti ti-cloud"></i>
+  <span>Transacciones en Cloud Storage</span>
+  <span class="val" id="storage">—</span>
+</div>
+
+<div class="grid" id="grid"></div>
+<footer id="footer"></footer>
+
+<script>
+const NODES = [
+  { id: 1, label: "Nodo 1", role: "Líder · e2-standard-4", host: "http://34.56.128.66:8080" },
+  { id: 2, label: "Nodo 2", role: "Réplica · e2-standard-2", host: "http://146.148.50.89:8080" }, //-------------------------------------------------------pendiente
+  { id: 3, label: "Nodo 3", role: "Réplica · e2-standard-2", host: "http://35.254.255.45:8080" }, //-------------------------------------------------------pendiente
+];
+
+// Si /api/node/status requiere JWT en algún nodo, pégalo aquí:
+const JWT = "";
+
+function barClass(p) { return p >= 85 ? "danger" : p >= 65 ? "warn" : ""; }
+function fmt(v, d=2) {
+  const n = parseFloat(v);
+  return isNaN(n) ? "—" : n.toLocaleString("es-MX", {maximumFractionDigits: d});
+}
+function pct(v) { const n = parseFloat(v); return isNaN(n) ? null : Math.min(100, Math.max(0, n)); }
+
+function card(node, data, err) {
+  const st = data ? "online" : "offline";
+  const badge = data ? "online" : (err ? "offline" : "unknown");
+  const badgeTxt = data ? "activo" : (err || "sin datos");
+
+  const cpu   = data ? pct(data.cpu)   : null;
+  const ram   = data ? pct(data.ram)   : null;
+  const disco = data ? pct(data.disco) : null;
+
+  function barHtml(label, val) {
+    return `<div class="bar-wrap">
+      <div class="bar-label"><span>${label}</span><span>${val !== null ? val.toFixed(1)+"%" : "—"}</span></div>
+      <div class="bar-bg"><div class="bar-fill ${barClass(val||0)}" style="width:${val||0}%"></div></div>
+    </div>`;
+  }
+
+  return `<div class="card ${st}">
+    <div class="card-head">
+      <div class="info"><h2>${node.label}</h2><p>${node.role}</p></div>
+      <span class="badge ${badge}">${badgeTxt}</span>
+    </div>
+    ${data ? `
+    <div class="metrics">
+      <div class="m-row"><span class="m-label"><i class="ti ti-users"></i>Cuentas</span><span class="m-val">${fmt(data.totalCuentas,0)}</span></div>
+      <div class="m-row"><span class="m-label"><i class="ti ti-currency-dollar"></i>Saldo total</span><span class="m-val">$${fmt(data.saldoTotal)}</span></div>
+      <div class="m-row"><span class="m-label"><i class="ti ti-arrows-exchange"></i>Transferencias</span><span class="m-val">${fmt(data.transferencias,0)}</span></div>
+      <div class="m-row"><span class="m-label"><i class="ti ti-hash"></i>Última tx</span><span class="m-val">${fmt(data.ultimaTransaccion,0)}</span></div>
+    </div>
+    ${barHtml("CPU", cpu)}
+    ${barHtml("RAM", ram)}
+    ${barHtml("Disco", disco)}
+    ` : `<div class="err">${err || "Sin respuesta del nodo"}</div>`}
+  </div>`;
+}
+
+async function fetchNode(node) {
+  const h = JWT ? {"Authorization":"Bearer "+JWT} : {};
+  try {
+    const r = await fetch(node.host+"/api/node/status", {headers:h, signal:AbortSignal.timeout(5000)});
+    if (!r.ok) return {data:null, err:"HTTP "+r.status};
+    return {data: await r.json(), err:null};
+  } catch(e) { return {data:null, err: e.name==="TimeoutError"?"Timeout":"Sin conexión"}; }
+}
+
+async function fetchStorage() {
+  const h = JWT ? {"Authorization":"Bearer "+JWT} : {};
+  try {
+    const r = await fetch(NODES[0].host+"/api/storage/count", {headers:h, signal:AbortSignal.timeout(5000)});
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d.count ?? d.total ?? null;
+  } catch { return null; }
+}
+
+async function fetchAll() {
+  const btn = document.getElementById("btn");
+  btn.disabled = true;
+
+  const [results, sc] = await Promise.all([
+    Promise.all(NODES.map(fetchNode)),
+    fetchStorage()
+  ]);
+
+  document.getElementById("grid").innerHTML =
+    NODES.map((n,i) => card(n, results[i].data, results[i].err)).join("");
+
+  document.getElementById("storage").textContent =
+    sc !== null ? sc.toLocaleString("es-MX") : "—";
+
+  document.getElementById("footer").textContent =
+    "Última actualización: " + new Date().toLocaleTimeString("es-MX");
+
+  btn.disabled = false;
+}
+
+fetchAll();
+setInterval(fetchAll, 5000); // se actualiza solo cada 5 segundos
+</script>
+</body>
+</html>

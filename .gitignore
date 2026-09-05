@@ -1,0 +1,9 @@
+# Archivos compilados de Java
+*.class
+*.jar
+/target/
+
+# Logs y basura del sistema
+*.log
+log_banco.txt
+.DS_Store
